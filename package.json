@@ -1,7 +1,7 @@
 {
-  "name": "shredder-bot",
+  "name": "bulkcreate-bot",
   "version": "1.0.0",
-  "description": "Discord stress-relief shredder bot",
+  "description": "Discord bulk channel creator bot",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
