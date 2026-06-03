@@ -108,21 +108,36 @@ client.on('interactionCreate', async interaction => {
     shredNames[userId] = username;
     const count = shredCounts[userId];
     const relief = reliefMessages[Math.floor(Math.random() * reliefMessages.length)];
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-    const embed = new EmbedBuilder()
+    // Stage 1
+    const embed1 = new EmbedBuilder()
+      .setColor(0xFF8800)
+      .setTitle('🗂️ FEEDING INTO SHREDDER...')
+      .setDescription(`**Original (doomed):**\n> ${msg}\n\n**Stage 1 — Feeding in...**\n\`\`\`${stage1}\`\`\``);
+    await interaction.reply({ embeds: [embed1] });
+    await sleep(1200);
+
+    // Stage 2
+    const embed2 = new EmbedBuilder()
+      .setColor(0xFF4400)
+      .setTitle('✂️ TEARING APART...')
+      .setDescription(`**Original (doomed):**\n> ${msg}\n\n**Stage 2 — Tearing apart...**\n\`\`\`${stage2}\`\`\``);
+    await interaction.editReply({ embeds: [embed2] });
+    await sleep(1200);
+
+    // Stage 3 — final
+    const embed3 = new EmbedBuilder()
       .setColor(0xFF2200)
-      .setTitle('🗂️ SHREDDING IN PROGRESS...')
+      .setTitle('💀 TOTAL DESTRUCTION')
       .setDescription(
         `**Original (doomed):**\n> ${msg}\n\n` +
-        `**Stage 1 — Feeding in...**\n\`\`\`${stage1}\`\`\`\n` +
-        `**Stage 2 — Tearing apart...**\n\`\`\`${stage2}\`\`\`\n` +
-        `**Stage 3 — TOTAL DESTRUCTION**\n\`\`\`${stage3}\`\`\`\n` +
+        `**Stage 3 — OBLITERATED**\n\`\`\`${stage3}\`\`\`\n` +
         `━━━━━━━━━━━━━━━━━━━━\n${relief}`
       )
       .setFooter({ text: `${username} has shredded ${count} message${count !== 1 ? 's' : ''} • /stressboard to see the chaos rankings` })
       .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed3] });
   }
 
   // ── /shredcount ──────────────────────────────────────────
