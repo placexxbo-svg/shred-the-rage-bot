@@ -1,12 +1,12 @@
 {
-  "name": "bulkcreate-bot",
+  "name": "pattern-learning-bot",
   "version": "1.0.0",
-  "description": "Discord bulk channel creator bot",
-  "main": "bot.js",
+  "description": "Bot that learns channel move patterns and auto-moves with sync",
+  "main": "pattern-bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node pattern-bot.js"
   },
   "dependencies": {
-    "discord.js": "^14.15.3"
+    "discord.js": "^14.14.1"
   }
 }
