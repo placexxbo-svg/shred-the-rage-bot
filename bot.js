@@ -33,7 +33,7 @@ if (!BOT_TOKEN) {
 // ============================================
 // PREFIX SYSTEM
 // ============================================
-let DEFAULT_PREFIX = '.';
+let DEFAULT_PREFIX = '%';
 const serverPrefixes = new Map();
 
 function getPrefix(guildId) {
