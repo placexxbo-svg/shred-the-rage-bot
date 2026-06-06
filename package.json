@@ -2,9 +2,9 @@
   "name": "pattern-learning-bot",
   "version": "1.0.0",
   "description": "Bot that learns channel move patterns and auto-moves with sync",
-  "main": "pattern-bot.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node pattern-bot.js"
+    "start": "node bot.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1"
