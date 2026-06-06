@@ -19,6 +19,7 @@ const {
 const P2_ASSISTANT_ID = '854233015475109888';
 const POKE_NAME_ID = '874910942490677270';
 const LOG_CHANNEL_ID = '1473843190791540846';
+const GUILD_ID = '1473843189357219892';
 
 // ============================================
 // USE ENVIRONMENT VARIABLE FOR TOKEN
@@ -55,9 +56,9 @@ class PatternLearningBot {
         this.recentMoves = new Set();
         this.recentlyProcessed = new Set();
         
-        // NEW: Category filters
-        this.forcedCategories = new Map(); // guildId -> Set of category IDs (ONLY these)
-        this.ignoredCategories = new Map(); // guildId -> Set of category IDs (NEVER these)
+        // Category filters
+        this.forcedCategories = new Map();
+        this.ignoredCategories = new Map();
         
         this.loadData();
     }
@@ -89,8 +90,6 @@ class PatternLearningBot {
                         serverPrefixes.set(guildId, prefix);
                     }
                 }
-                
-                // Load category filters
                 if (obj.forcedCategories) {
                     for (const [guildId, cats] of Object.entries(obj.forcedCategories)) {
                         this.forcedCategories.set(guildId, new Set(cats));
@@ -144,22 +143,18 @@ class PatternLearningBot {
         this.saveData();
     }
     
-    // Category filter methods
     shouldProcessChannel(channel) {
         const guildId = channel.guild.id;
         const categoryId = channel.parentId;
         
-        // Check forced categories (whitelist)
         const forced = this.forcedCategories.get(guildId);
         if (forced && forced.size > 0) {
-            // If forced list exists, ONLY process if in forced category
             if (!categoryId || !forced.has(categoryId)) {
                 console.log(`⏭️ Channel "${channel.name}" not in forced category, skipping`);
                 return false;
             }
         }
         
-        // Check ignored categories (blacklist)
         const ignored = this.ignoredCategories.get(guildId);
         if (ignored && ignored.size > 0 && categoryId && ignored.has(categoryId)) {
             console.log(`⏭️ Channel "${channel.name}" is in ignored category, skipping`);
@@ -268,7 +263,6 @@ class PatternLearningBot {
         this.recentlyProcessed.add(processKey);
         setTimeout(() => this.recentlyProcessed.delete(processKey), 10000);
         
-        // Check if channel should be processed (forced/ignore categories)
         if (!this.shouldProcessChannel(channel)) {
             return;
         }
@@ -278,7 +272,7 @@ class PatternLearningBot {
         const targetCategoryId = this.getTargetCategory(pokemonName, guild.id);
         
         if (!targetCategoryId) {
-            console.log(`⚠️ No pattern found for ${pokemonName}. Use .pattern add ${pokemonName} CategoryName`);
+            console.log(`⚠️ No pattern found for ${pokemonName}. Use %pattern add ${pokemonName} CategoryName`);
             return;
         }
         
@@ -289,14 +283,12 @@ class PatternLearningBot {
         }
         
         try {
-            // STEP 1: CLONE the channel
             const clone = await channel.clone({
                 name: channel.name,
                 reason: `Clone of spawn channel for ${pokemonName}`
             });
             console.log(`📋 Cloned channel: ${clone.name} (ID: ${clone.id})`);
             
-            // STEP 2: Log clone mention to your designated channel
             const logChannel = await this.client.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
             if (logChannel) {
                 const logEmbed = new EmbedBuilder()
@@ -316,15 +308,12 @@ class PatternLearningBot {
                 console.log(`📤 Logged clone mention to channel ${LOG_CHANNEL_ID}`);
             }
             
-            // STEP 3: Rename ORIGINAL to Pokemon name
             await channel.setName(pokemonName.toLowerCase());
             console.log(`✏️ Renamed original channel to: ${pokemonName}`);
             
-            // STEP 4: Move ORIGINAL to category with sync
             await channel.setParent(targetCategoryId, { lockPermissions: true });
             console.log(`🚚 Moved ${pokemonName} to category: ${targetCategory.name}`);
             
-            // STEP 5: Success confirmation
             if (logChannel) {
                 const successEmbed = new EmbedBuilder()
                     .setColor(0x00FF88)
@@ -333,7 +322,7 @@ class PatternLearningBot {
                     .addFields(
                         { name: 'Collection Channel', value: `<#${channel.id}>`, inline: true },
                         { name: 'Location', value: targetCategory.name, inline: true },
-                        { name: 'Spawn Clone', value: `<#${clone.id}> (keep for redirect)', inline': true }
+                        { name: 'Spawn Clone', value: `<#${clone.id}> (keep for redirect)`, inline: true }
                     )
                     .setTimestamp();
                 
@@ -513,7 +502,6 @@ const commands = [
                 .setDescription('Value for the setting')
                 .setRequired(false)),
     
-    // NEW: Category filter commands
     new SlashCommandBuilder()
         .setName('forced')
         .setDescription('Manage forced categories (ONLY process spawns in these categories)')
@@ -562,22 +550,30 @@ const client = new Client({
 });
 
 const patternBot = new PatternLearningBot(client);
-
-// ============================================
-// REGISTER SLASH COMMANDS
-// ============================================
 const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
 
+// ============================================
+// READY EVENT
+// ============================================
 client.once('ready', async () => {
     console.log(`🤖 Pokemon Pattern Bot online as ${client.user.tag}`);
     console.log(`📡 Watching P2 Assistant and Poke-Name`);
     console.log(`📋 Logging clones to channel ID: ${LOG_CHANNEL_ID}`);
     
     try {
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('✅ Slash commands registered!');
+        await rest.put(
+            Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+            { body: commands }
+        );
+        console.log('✅ Slash commands registered to guild!');
+        
+        await rest.put(
+            Routes.applicationCommands(client.user.id),
+            { body: commands }
+        );
+        console.log('✅ Slash commands registered globally!');
     } catch (error) {
-        console.error(error);
+        console.error('Error registering commands:', error);
     }
 });
 
@@ -615,11 +611,11 @@ client.on('interactionCreate', async (interaction) => {
             .setDescription('I watch P2 Assistant and Poke-Name to auto-process spawned Pokemon!')
             .addFields(
                 { name: '🎯 Auto Process', value: '1. Clone spawn channel\n2. Log clone to <#1473843190791540846>\n3. Rename original to Pokemon\n4. Move original to category with sync', inline: false },
-                { name: '📝 Prefix Commands', value: `\`${currentPrefix}pattern add <pokemon> <category>\`\n\`${currentPrefix}pattern remove <pokemon>\`\n\`${currentPrefix}pattern list\`\n\`${currentPrefix}patterns\`\n\`${currentPrefix}clearpatterns [name]\``, inline: false },
-                { name: '⚡ Slash Commands', value: `/ping - Check bot\n/prefix <newprefix>\n/help - This menu\n/patternadd\n/patternremove\n/patterns\n/patternconfig\n/forced\n/ignore`, inline: false },
-                { name: '🔒 Category Filters', value: '`/forced add <category>` - ONLY process spawns in this category\n`/ignore add <category>` - NEVER process spawns in this category\n`/forced list` / `/ignore list`', inline: false }
+                { name: '📝 Prefix Commands', value: `\`${currentPrefix}pattern add <pokemon> <category>\`\n\`${currentPrefix}pattern remove <pokemon>\`\n\`${currentPrefix}pattern list\`\n\`${currentPrefix}patterns\`\n\`${currentPrefix}clearpatterns [name]\`\n\`${currentPrefix}forced add/remove/list <category>\`\n\`${currentPrefix}ignore add/remove/list <category>\``, inline: false },
+                { name: '⚡ Slash Commands', value: `/ping\n/prefix\n/help\n/patternadd\n/patternremove\n/patterns\n/patternconfig\n/forced\n/ignore`, inline: false },
+                { name: '🔒 Category Filters', value: '`/forced add <category>` - ONLY process spawns in this category\n`/ignore add <category>` - NEVER process spawns in this category', inline: false }
             )
-            .setFooter({ text: `Prefix: ${currentPrefix} | No number detection - uses category filters!` });
+            .setFooter({ text: `Current prefix: ${currentPrefix} | Threshold: 2 | Confidence: 75%` });
         await interaction.reply({ embeds: [embed] });
         return;
     }
@@ -669,10 +665,10 @@ client.on('interactionCreate', async (interaction) => {
             );
         
         if (manualPatterns.length > 0) {
-            embed.addFields({ name: '✏️ Manual Patterns', value: manualPatterns.slice(0, 10).map(p => `**${p.name}** → <#${p.categoryId}>`).join('\n') || 'None', inline: false });
+            embed.addFields({ name: '✏️ Manual Patterns', value: manualPatterns.slice(0, 10).map(p => `**${p.name}** → <#${p.categoryId}>`).join('\n'), inline: false });
         }
         if (activePatterns.length > 0) {
-            embed.addFields({ name: '✅ Active Learned Patterns', value: activePatterns.slice(0, 10).map(p => `**${p.name}** → <#${p.categoryId}> (${p.confidence}%)`).join('\n') || 'None', inline: false });
+            embed.addFields({ name: '✅ Active Learned Patterns', value: activePatterns.slice(0, 10).map(p => `**${p.name}** → <#${p.categoryId}> (${p.confidence}%)`).join('\n'), inline: false });
         }
         
         await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -727,7 +723,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
     
-    // NEW: /forced command
     if (commandName === 'forced') {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return interaction.reply({ content: '❌ You need Administrator permission!', ephemeral: true });
@@ -738,14 +733,14 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'list') {
             const forced = patternBot.getForcedCategories(guild.id);
             if (forced.size === 0) {
-                return interaction.reply({ content: '📋 No forced categories set. Bot processes ALL channels (unless ignored).', ephemeral: true });
+                return interaction.reply({ content: '📋 No forced categories set. Bot processes ALL channels.', ephemeral: true });
             }
             const list = Array.from(forced).map(id => `<#${id}>`).join(', ');
-            return interaction.reply({ content: `📋 **Forced Categories** (ONLY process these):\n${list}`, ephemeral: true });
+            return interaction.reply({ content: `📋 **Forced Categories:**\n${list}`, ephemeral: true });
         }
         
         if (!categoryName) {
-            return interaction.reply({ content: '❌ Please provide a category name for add/remove', ephemeral: true });
+            return interaction.reply({ content: '❌ Please provide a category name', ephemeral: true });
         }
         
         const category = guild.channels.cache.find(
@@ -764,7 +759,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
     
-    // NEW: /ignore command
     if (commandName === 'ignore') {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return interaction.reply({ content: '❌ You need Administrator permission!', ephemeral: true });
@@ -778,11 +772,11 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: '📋 No ignored categories set.', ephemeral: true });
             }
             const list = Array.from(ignored).map(id => `<#${id}>`).join(', ');
-            return interaction.reply({ content: `📋 **Ignored Categories** (NEVER process these):\n${list}`, ephemeral: true });
+            return interaction.reply({ content: `📋 **Ignored Categories:**\n${list}`, ephemeral: true });
         }
         
         if (!categoryName) {
-            return interaction.reply({ content: '❌ Please provide a category name for add/remove', ephemeral: true });
+            return interaction.reply({ content: '❌ Please provide a category name', ephemeral: true });
         }
         
         const category = guild.channels.cache.find(
@@ -835,4 +829,185 @@ client.on('messageCreate', async (message) => {
 client.on('channelUpdate', async (oldChannel, newChannel) => {
     if (oldChannel.parentId !== newChannel.parentId && newChannel.parentId) {
         const moveKey = `${newChannel.id}-${Date.now()}`;
-        if (patternBot.recentMoves.has(moveKey)) return
+        if (patternBot.recentMoves.has(moveKey)) return;
+        patternBot.recentMoves.add(moveKey);
+        setTimeout(() => patternBot.recentMoves.delete(moveKey), 5000);
+        
+        await patternBot.learnPattern(newChannel.name, newChannel.parentId, newChannel.guild.id);
+        console.log(`📚 Learned from manual move: ${newChannel.name} → category`);
+    }
+});
+
+// ============================================
+// PREFIX COMMAND HANDLER
+// ============================================
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.guild) return;
+    
+    const currentPrefix = getPrefix(message.guild.id);
+    if (!message.content.startsWith(currentPrefix)) return;
+    
+    const args = message.content.slice(currentPrefix.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
+    
+    // PATTERN ADD
+    if (command === 'pattern' && args[0]) {
+        const subCommand = args[0].toLowerCase();
+        
+        if (subCommand === 'add' && args.length >= 3) {
+            if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+                return message.reply('❌ You need Manage Channels permission!');
+            }
+            const pokemon = args[1].toLowerCase();
+            const categoryName = args.slice(2).join(' ');
+            const category = message.guild.channels.cache.find(
+                c => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === categoryName.toLowerCase()
+            );
+            if (!category) return message.reply(`❌ Category "${categoryName}" not found!`);
+            patternBot.addManualPattern(message.guild.id, pokemon, category.id);
+            message.reply(`✅ Added: **${pokemon}** → **${category.name}**`);
+        }
+        
+        else if (subCommand === 'remove' && args[1]) {
+            if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+                return message.reply('❌ You need Manage Channels permission!');
+            }
+            const pokemon = args[1].toLowerCase();
+            const removed = patternBot.removeManualPattern(message.guild.id, pokemon);
+            message.reply(removed ? `✅ Removed pattern for **${pokemon}**` : `❌ No pattern found for **${pokemon}**`);
+        }
+        
+        else if (subCommand === 'list') {
+            const patterns = patternBot.getManualPatterns(message.guild.id);
+            if (patterns.length === 0) return message.reply('No manual patterns.');
+            const embed = new EmbedBuilder()
+                .setColor(0x9B59B6)
+                .setTitle('📋 Manual Patterns')
+                .setDescription(patterns.map((p, i) => {
+                    const cat = message.guild.channels.cache.get(p.categoryId);
+                    return `${i+1}. **${p.name}** → **${cat?.name || 'Unknown'}**`;
+                }).join('\n'));
+            await message.channel.send({ embeds: [embed] });
+        }
+    }
+    
+    // PATTERNS STATS
+    else if (command === 'patterns') {
+        const stats = patternBot.getStats(message.guild.id);
+        const embed = new EmbedBuilder()
+            .setColor(0x9B59B6)
+            .setTitle('📊 Pattern Stats')
+            .addFields(
+                { name: 'Active', value: `${stats.activePatterns}`, inline: true },
+                { name: 'Learning', value: `${stats.learningPatterns}`, inline: true },
+                { name: 'Manual', value: `${stats.manualCount}`, inline: true },
+                { name: 'Learning Enabled', value: stats.settings.learningEnabled ? '✅' : '❌', inline: true },
+                { name: 'Threshold', value: `${stats.settings.threshold}`, inline: true },
+                { name: 'Confidence', value: `${Math.floor(stats.settings.confidence * 100)}%`, inline: true }
+            );
+        await message.channel.send({ embeds: [embed] });
+    }
+    
+    // CLEAR PATTERNS
+    else if (command === 'clearpatterns') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ You need Administrator permission!');
+        }
+        const pokemon = args[0]?.toLowerCase();
+        if (pokemon) {
+            const removed = patternBot.removeLearnedPattern(message.guild.id, pokemon);
+            message.reply(removed ? `✅ Cleared pattern for **${pokemon}**` : `❌ No pattern found for **${pokemon}**`);
+        } else {
+            for (const [name, catId] of patternBot.learnedPatterns.entries()) {
+                const confidence = patternBot.patternConfidence.get(name);
+                if (confidence && confidence.guildId === message.guild.id) {
+                    patternBot.learnedPatterns.delete(name);
+                    patternBot.patternConfidence.delete(name);
+                }
+            }
+            patternBot.saveData();
+            message.reply('✅ Cleared ALL learned patterns!');
+        }
+    }
+    
+    // FORCED CATEGORIES
+    else if (command === 'forced') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ You need Administrator permission!');
+        }
+        const subCommand = args[0]?.toLowerCase();
+        const categoryName = args.slice(1).join(' ');
+        
+        if (subCommand === 'list') {
+            const forced = patternBot.getForcedCategories(message.guild.id);
+            if (forced.size === 0) {
+                return message.reply('📋 No forced categories set. Bot processes ALL spawn channels.');
+            }
+            const list = Array.from(forced).map(id => `<#${id}>`).join(', ');
+            return message.reply(`📋 **Forced Categories:** ${list}`);
+        }
+        
+        const category = message.guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === categoryName.toLowerCase()
+        );
+        if (!category) return message.reply(`❌ Category "${categoryName}" not found!`);
+        
+        if (subCommand === 'add') {
+            patternBot.addForcedCategory(message.guild.id, category.id);
+            message.reply(`✅ Added **${category.name}** to FORCED list. Bot will ONLY process spawns in this category!`);
+        } else if (subCommand === 'remove') {
+            patternBot.removeForcedCategory(message.guild.id, category.id);
+            message.reply(`✅ Removed **${category.name}** from FORCED list.`);
+        }
+    }
+    
+    // IGNORED CATEGORIES
+    else if (command === 'ignore') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ You need Administrator permission!');
+        }
+        const subCommand = args[0]?.toLowerCase();
+        const categoryName = args.slice(1).join(' ');
+        
+        if (subCommand === 'list') {
+            const ignored = patternBot.getIgnoredCategories(message.guild.id);
+            if (ignored.size === 0) {
+                return message.reply('📋 No ignored categories set.');
+            }
+            const list = Array.from(ignored).map(id => `<#${id}>`).join(', ');
+            return message.reply(`📋 **Ignored Categories:** ${list}`);
+        }
+        
+        const category = message.guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === categoryName.toLowerCase()
+        );
+        if (!category) return message.reply(`❌ Category "${categoryName}" not found!`);
+        
+        if (subCommand === 'add') {
+            patternBot.addIgnoredCategory(message.guild.id, category.id);
+            message.reply(`✅ Added **${category.name}** to IGNORE list. Bot will NEVER process spawns in this category!`);
+        } else if (subCommand === 'remove') {
+            patternBot.removeIgnoredCategory(message.guild.id, category.id);
+            message.reply(`✅ Removed **${category.name}** from IGNORE list.`);
+        }
+    }
+    
+    // HELP
+    else if (command === 'help') {
+        const embed = new EmbedBuilder()
+            .setColor(0x9B59B6)
+            .setTitle('🤖 Pokemon Pattern Bot')
+            .setDescription(`**Prefix:** ${currentPrefix}\n**Slash:** /help, /ping, /prefix, /patternadd, /patternremove, /patterns, /patternconfig, /forced, /ignore`)
+            .addFields(
+                { name: '📝 Prefix Commands', value: `\`${currentPrefix}pattern add <pokemon> <category>\`\n\`${currentPrefix}pattern remove <pokemon>\`\n\`${currentPrefix}pattern list\`\n\`${currentPrefix}patterns\`\n\`${currentPrefix}clearpatterns [name]\`\n\`${currentPrefix}forced add/remove/list <category>\`\n\`${currentPrefix}ignore add/remove/list <category>\``, inline: false },
+                { name: '🎯 Auto Process', value: '1. Clones spawn channel\n2. Logs clone to <#1473843190791540846>\n3. Renames original to Pokemon\n4. Moves to category with sync', inline: false }
+            )
+            .setFooter({ text: `Default prefix: % | Threshold: 2 moves to learn | Confidence: 75%` });
+        await message.channel.send({ embeds: [embed] });
+    }
+});
+
+// ============================================
+// LOGIN
+// ============================================
+client.login(BOT_TOKEN);
