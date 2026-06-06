@@ -11,10 +11,14 @@ const {
 } = require('discord.js');
 
 // ============================================
-// CONFIGURATION
+// USE ENVIRONMENT VARIABLE FOR TOKEN
 // ============================================
-const config = require('./config.js'); // Use your existing config file
-const BOT_TOKEN = config.BOT_TOKEN;
+const BOT_TOKEN = process.env.DISCORD_TOKEN;
+
+if (!BOT_TOKEN) {
+    console.error('❌ DISCORD_TOKEN environment variable is not set!');
+    process.exit(1);
+}
 
 // ============================================
 // PATTERN LEARNING SYSTEM
@@ -23,11 +27,11 @@ class PatternLearningBot {
     constructor(client) {
         this.client = client;
         this.PATTERNS_FILE = './learned_patterns.json';
-        this.learnedPatterns = new Map(); // channelName -> categoryId
-        this.patternConfidence = new Map(); // channelName -> {count, categoryId, guildId}
-        this.manualPatterns = new Map(); // guildId -> Map(channelName -> categoryId)
-        this.guildSettings = new Map(); // guildId -> {learningEnabled, threshold, confidence, delay}
-        this.pendingMoves = new Map(); // channelId -> timeout
+        this.learnedPatterns = new Map();
+        this.patternConfidence = new Map();
+        this.manualPatterns = new Map();
+        this.guildSettings = new Map();
+        this.pendingMoves = new Map();
         this.recentMoves = new Set();
         
         this.loadData();
@@ -125,13 +129,11 @@ class PatternLearningBot {
     getTargetCategory(channelName, guildId) {
         const channelKey = channelName.toLowerCase();
         
-        // Check manual patterns first
         const guildManual = this.manualPatterns.get(guildId);
         if (guildManual && guildManual.has(channelKey)) {
             return guildManual.get(channelKey);
         }
         
-        // Check learned patterns
         if (this.learnedPatterns.has(channelKey)) {
             const minConfidence = this.getGuildSetting(guildId, 'confidence', 0.75);
             const confidence = this.patternConfidence.get(channelKey);
@@ -161,7 +163,6 @@ class PatternLearningBot {
                 
                 console.log(`🤖 Auto-moved & synced "${freshChannel.name}" → ${targetCategory.name}`);
                 
-                // Send notification
                 const logChannel = freshChannel.guild.systemChannel;
                 if (logChannel) {
                     const embed = new EmbedBuilder()
@@ -297,14 +298,12 @@ const patternBot = new PatternLearningBot(client);
 // EVENT HANDLERS
 // ============================================
 
-// Track channel moves (for learning)
 client.on('channelUpdate', async (oldChannel, newChannel) => {
     if (oldChannel.parentId !== newChannel.parentId) {
         await patternBot.onChannelMove(newChannel, oldChannel.parentId, newChannel.parentId);
     }
 });
 
-// Track new channels (for auto-move)
 client.on('channelCreate', async (channel) => {
     if (channel.type === ChannelType.GuildText) {
         setTimeout(async () => {
@@ -327,9 +326,6 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
     
-    // ============================================
-    // PATTERN ADD COMMAND
-    // ============================================
     if (command === 'pattern' && args[0]) {
         const subCommand = args[0].toLowerCase();
         
@@ -358,9 +354,6 @@ client.on('messageCreate', async (message) => {
             message.reply(`✅ Added manual pattern: **${channels.join(', ')}** → **${category.name}**`);
         }
         
-        // ============================================
-        // PATTERN REMOVE COMMAND
-        // ============================================
         else if (subCommand === 'remove' && args[1]) {
             if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
                 return message.reply('❌ You need **Manage Channels** permission!');
@@ -376,9 +369,6 @@ client.on('messageCreate', async (message) => {
             }
         }
         
-        // ============================================
-        // PATTERN LIST COMMAND
-        // ============================================
         else if (subCommand === 'list') {
             const patterns = patternBot.getManualPatterns(message.guild.id);
             
@@ -399,9 +389,6 @@ client.on('messageCreate', async (message) => {
         }
     }
     
-    // ============================================
-    // PATTERNS SUMMARY COMMAND
-    // ============================================
     else if (command === 'patterns') {
         const stats = patternBot.getStats(message.guild.id);
         
@@ -423,9 +410,6 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [embed] });
     }
     
-    // ============================================
-    // PATTERN CONFIG COMMAND
-    // ============================================
     else if (command === 'patternconfig') {
         const subCommand = args[0]?.toLowerCase();
         
@@ -467,7 +451,7 @@ client.on('messageCreate', async (message) => {
         else if (subCommand === 'threshold' && args[1]) {
             const threshold = parseInt(args[1]);
             if (isNaN(threshold) || threshold < 1 || threshold > 10) {
-                return message.reply('❌ Threshold must be a number between 1 and 10.');
+                return message.reply('❌ Threshold must be between 1 and 10.');
             }
             patternBot.setGuildSetting(message.guild.id, 'threshold', threshold);
             message.reply(`✅ Pattern learning threshold set to **${threshold}** moves.`);
@@ -492,9 +476,6 @@ client.on('messageCreate', async (message) => {
         }
     }
     
-    // ============================================
-    // CLEAR PATTERNS COMMAND
-    // ============================================
     else if (command === 'clearpatterns') {
         if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return message.reply('❌ You need **Administrator** permission!');
@@ -524,9 +505,6 @@ client.on('messageCreate', async (message) => {
         }
     }
     
-    // ============================================
-    // HELP COMMAND
-    // ============================================
     else if (command === 'patternhelp') {
         const embed = new EmbedBuilder()
             .setColor(0x9B59B6)
